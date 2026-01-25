@@ -16,7 +16,7 @@ import mlx.nn as nn
 import numpy as np
 from argmaxtools.test_utils import AppleSiliconContextMixin, InferenceContextSpec
 from argmaxtools.utils import get_logger
-from ...diffusionkit.utils import bytes2gigabytes
+from ..utils import bytes2gigabytes
 from PIL import Image
 
 from .model_io import (
@@ -31,23 +31,9 @@ from .model_io import (
     load_vae_encoder,
 )
 from .sampler import FluxSampler, ModelSamplingDiscreteFlow
+from .constants import MODEL_REPO_IDS, T5_MAX_LENGTH
 
 logger = get_logger(__name__)
-
-MMDIT_CKPT = {
-    "argmaxinc/mlx-stable-diffusion-3-medium": "argmaxinc/mlx-stable-diffusion-3-medium",
-    "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
-    "argmaxinc/mlx-FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
-    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
-    "argmaxinc/mlx-FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev",
-}
-
-T5_MAX_LENGTH = {
-    "argmaxinc/mlx-stable-diffusion-3-medium": 512,
-    "argmaxinc/mlx-FLUX.1-schnell": 256,
-    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
-    "argmaxinc/mlx-FLUX.1-dev": 512,
-}
 
 
 class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpec):
@@ -69,13 +55,13 @@ class DiffusionPipeline:
         a16: bool = False,
         local_ckpt=None,
     ):
-        model_io.LOCAl_SD3_CKPT = local_ckpt
+        model_io.LOCAL_SD3_CKPT = local_ckpt
         self.float16_dtype = mx.float16
         model_io._FLOAT16 = self.float16_dtype
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.use_t5 = use_t5
-        self.mmdit_ckpt = MMDIT_CKPT[model_version]
+        self.mmdit_ckpt = MODEL_REPO_IDS[model_version]
         self.low_memory_mode = low_memory_mode
         self.model = _DEFAULT_MODEL
         self.model_version = model_version
@@ -603,12 +589,12 @@ class FluxPipeline(DiffusionPipeline):
         local_ckpt=None,
         quantize_mmdit: bool = False,
     ):
-        model_io.LOCAl_SD3_CKPT = local_ckpt
+        model_io.LOCAL_SD3_CKPT = local_ckpt
         self.float16_dtype = mx.bfloat16
         model_io._FLOAT16 = self.float16_dtype
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
-        self.mmdit_ckpt = MMDIT_CKPT[model_version]
+        self.mmdit_ckpt = MODEL_REPO_IDS[model_version]
         self.low_memory_mode = low_memory_mode
         self.model = _DEFAULT_MODEL
         self.model_version = model_version

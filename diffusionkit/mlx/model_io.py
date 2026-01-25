@@ -28,9 +28,6 @@ from .t5 import SD3T5Encoder
 from .tokenizer import T5Tokenizer, Tokenizer
 from .vae import Autoencoder, VAEDecoder, VAEEncoder
 
-# import argmaxtools.mlx.utils as axu
-
-
 RANK = 32
 _DEFAULT_MMDIT = "argmaxinc/mlx-stable-diffusion-3-medium"
 _MMDIT = {
@@ -96,7 +93,7 @@ MAX_LATENT_RESOLUTION = {
     "sd3-8b-unreleased": 192,
 }
 
-LOCAl_SD3_CKPT = None
+LOCAL_SD3_CKPT = None
 
 
 def flux_state_dict_adjustments(state_dict, prefix="", hidden_size=3072, mlp_ratio=4):
@@ -368,16 +365,10 @@ def mmdit_state_dict_adjustments(state_dict, prefix=""):
 
     return state_dict
 
-
-def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
-    # Keep only the keys that have the prefix
-    state_dict = {k: v for k, v in state_dict.items() if prefix in k}
-    state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
-
+def _common_vae_adjustments(state_dict):
     # Filter out MMDIT related tensors
     state_dict = {k: v for k, v in state_dict.items() if "diffusion_model." not in k}
 
-    state_dict = {k.replace("up", "up_blocks"): v for k, v in state_dict.items()}
     state_dict = {k.replace("mid", "mid_blocks"): v for k, v in state_dict.items()}
 
     state_dict = {
@@ -393,6 +384,9 @@ def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
     }
 
     state_dict = {k.replace(".norm.", ".group_norm."): v for k, v in state_dict.items()}
+    state_dict = {
+        k.replace("norm_out", "conv_norm_out"): v for k, v in state_dict.items()
+    }
 
     state_dict = {k.replace(".q", ".query_proj"): v for k, v in state_dict.items()}
     state_dict = {k.replace(".k", ".key_proj"): v for k, v in state_dict.items()}
@@ -403,21 +397,8 @@ def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
     state_dict = {
         k.replace(".nin_shortcut.", ".conv_shortcut."): v for k, v in state_dict.items()
     }
-    state_dict = {
-        k.replace(".up_blockssample.conv.", ".upsample."): v
-        for k, v in state_dict.items()
-    }
-
-    state_dict = {
-        k.replace("norm_out", "conv_norm_out"): v for k, v in state_dict.items()
-    }
 
     # reshape weights
-
-    state_dict = {
-        k: v.transpose(0, 2, 3, 1) if "upsample" in k and "weight" in k else v
-        for k, v in state_dict.items()
-    }
     state_dict = {
         k: (
             v.transpose(0, 2, 3, 1)
@@ -441,8 +422,31 @@ def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
     state_dict = {
         k: v[:, :, 0, 0] if "proj.weight" in k else v for k, v in state_dict.items()
     }
-    state_dict["conv_in.weight"] = state_dict["conv_in.weight"].transpose(0, 2, 3, 1)
-    state_dict["conv_out.weight"] = state_dict["conv_out.weight"].transpose(0, 2, 3, 1)
+    if "conv_in.weight" in state_dict:
+        state_dict["conv_in.weight"] = state_dict["conv_in.weight"].transpose(0, 2, 3, 1)
+    if "conv_out.weight" in state_dict:
+        state_dict["conv_out.weight"] = state_dict["conv_out.weight"].transpose(0, 2, 3, 1)
+
+    return state_dict
+
+def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
+    # Keep only the keys that have the prefix
+    state_dict = {k: v for k, v in state_dict.items() if prefix in k}
+    state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
+
+    state_dict = {k.replace("up", "up_blocks"): v for k, v in state_dict.items()}
+    state_dict = {
+        k.replace(".up_blockssample.conv.", ".upsample."): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = _common_vae_adjustments(state_dict)
+
+    # reshape weights
+    state_dict = {
+        k: v.transpose(0, 2, 3, 1) if "upsample" in k and "weight" in k else v
+        for k, v in state_dict.items()
+    }
 
     return state_dict
 
@@ -452,73 +456,18 @@ def vae_encoder_state_dict_adjustments(state_dict, prefix="encoder."):
     state_dict = {k: v for k, v in state_dict.items() if prefix in k}
     state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
 
-    # Filter out MMDIT related tensors
-    state_dict = {k: v for k, v in state_dict.items() if "diffusion_model." not in k}
-
     state_dict = {k.replace("down.", "down_blocks."): v for k, v in state_dict.items()}
     state_dict = {
         k.replace(".downsample.conv.", ".downsample."): v for k, v in state_dict.items()
     }
-    state_dict = {k.replace(".block.", ".resnets."): v for k, v in state_dict.items()}
-    state_dict = {
-        k.replace(".nin_shortcut.", ".conv_shortcut."): v for k, v in state_dict.items()
-    }
 
-    state_dict = {k.replace(".q", ".query_proj"): v for k, v in state_dict.items()}
-    state_dict = {k.replace(".k", ".key_proj"): v for k, v in state_dict.items()}
-    state_dict = {k.replace(".v", ".value_proj"): v for k, v in state_dict.items()}
-    state_dict = {k.replace(".proj_out", ".out_proj"): v for k, v in state_dict.items()}
-
-    state_dict = {k.replace("mid", "mid_blocks"): v for k, v in state_dict.items()}
-
-    state_dict = {
-        k.replace("mid_blocks.block_1", "mid_blocks.0"): v
-        for k, v in state_dict.items()
-    }
-    state_dict = {
-        k.replace("mid_blocks.block_2", "mid_blocks.2"): v
-        for k, v in state_dict.items()
-    }
-    state_dict = {
-        k.replace("mid_blocks.attn_1", "mid_blocks.1"): v for k, v in state_dict.items()
-    }
-
-    state_dict = {k.replace(".norm.", ".group_norm."): v for k, v in state_dict.items()}
-    state_dict = {
-        k.replace("norm_out", "conv_norm_out"): v for k, v in state_dict.items()
-    }
+    state_dict = _common_vae_adjustments(state_dict)
 
     # reshape weights
-
     state_dict = {
         k: v.transpose(0, 2, 3, 1) if "downsample" in k and "weight" in k else v
         for k, v in state_dict.items()
     }
-    state_dict = {
-        k: (
-            v.transpose(0, 2, 3, 1)
-            if "resnets" in k and "conv" in k and "weight" in k
-            else v
-        )
-        for k, v in state_dict.items()
-    }
-    state_dict = {
-        k: (
-            v.transpose(0, 2, 3, 1)
-            if "mid_blocks" in k and "conv" in k and "weight" in k
-            else v
-        )
-        for k, v in state_dict.items()
-    }
-    state_dict = {
-        k: v[:, 0, 0, :] if "conv_shortcut.weight" in k else v
-        for k, v in state_dict.items()
-    }
-    state_dict = {
-        k: v[:, :, 0, 0] if "proj.weight" in k else v for k, v in state_dict.items()
-    }
-    state_dict["conv_in.weight"] = state_dict["conv_in.weight"].transpose(0, 2, 3, 1)
-    state_dict["conv_out.weight"] = state_dict["conv_out.weight"].transpose(0, 2, 3, 1)
 
     return state_dict
 
@@ -681,7 +630,7 @@ def load_mmdit(
     model = MMDiT(config)
 
     mmdit_weights = _MMDIT[key][model_key]
-    mmdit_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, mmdit_weights)
+    mmdit_weights_ckpt = LOCAL_SD3_CKPT or hf_hub_download(key, mmdit_weights)
     hf_hub_download(key, "config.json")
     weights = mx.load(mmdit_weights_ckpt)
     weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
@@ -708,7 +657,7 @@ def load_flux(
     model = MMDiT(config)
 
     flux_weights = _MMDIT[key][model_key]
-    flux_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, flux_weights)
+    flux_weights_ckpt = LOCAL_SD3_CKPT or hf_hub_download(key, flux_weights)
     hf_hub_download(key, "config.json")
     weights = mx.load(flux_weights_ckpt)
 
@@ -822,7 +771,7 @@ def load_vae_decoder(
 
     dtype = _FLOAT16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
-    vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
+    vae_weights_ckpt = LOCAL_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
     weights = vae_decoder_state_dict_adjustments(
         weights, prefix=_PREFIX[key]["vae_decoder"]
@@ -850,7 +799,7 @@ def load_vae_encoder(
 
     dtype = _FLOAT16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
-    vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
+    vae_weights_ckpt = LOCAL_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
     weights = vae_encoder_state_dict_adjustments(
         weights, prefix=_PREFIX[key]["vae_encoder"]
