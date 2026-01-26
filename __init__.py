@@ -1,18 +1,16 @@
 import numpy as np
-import PIL.Image
 import mlx.core as mx
 from typing import Optional, Tuple
-from PIL import Image
 from .diffusionkit.mlx.tokenizer import Tokenizer, T5Tokenizer
 from .diffusionkit.mlx.t5 import SD3T5Encoder
 from .diffusionkit.mlx import load_t5_encoder, load_t5_tokenizer, load_tokenizer, load_text_encoder
 from .diffusionkit.mlx.clip import CLIPTextModel
 from .diffusionkit.mlx.model_io import load_flux
 from .diffusionkit.mlx import FluxPipeline
+from .diffusionkit.mlx.constants import T5_MAX_LENGTH
 import folder_paths
 import torch
 import os 
-import gc
 
 class MLXDecoder:
 
@@ -174,13 +172,6 @@ class MLXClipTextEncoder:
         return tokens
 
     def encode(self, mlx_conditioning, text):
-
-        T5_MAX_LENGTH = {
-            "argmaxinc/mlx-stable-diffusion-3-medium": 512,
-            "argmaxinc/mlx-FLUX.1-schnell": 256,
-            "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
-            "argmaxinc/mlx-FLUX.1-dev": 512,
-        }
 
         model_name = mlx_conditioning["model_name"]
         clip_l_encoder:CLIPTextModel = mlx_conditioning["clip_l_model"]
