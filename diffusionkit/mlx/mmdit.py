@@ -981,6 +981,11 @@ def unpatchify(
 ) -> mx.array:
     """Unpatchify to restore VAE latent space compatible data format"""
     h, w = target_height // patch_size, target_width // patch_size
+    # After reshape: x.shape == (B, h, w, p, p, C) where
+    #   h = H / p, w = W / p, p = patch_size, C = vae_latent_dim.
+    # We transpose to (B, h, p, w, p, C) so that the final reshape
+    # interleaves patch dimensions into contiguous H and W axes:
+    #   (B, h, p, w, p, C) -> (B, H = h * p, W = w * p, C).
     x = x.reshape(x.shape[0], h, w, patch_size, patch_size, vae_latent_dim)
     x = x.transpose(0, 1, 3, 2, 4, 5)
     return x.reshape(x.shape[0], target_height, target_width, vae_latent_dim)
